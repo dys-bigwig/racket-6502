@@ -3,7 +3,6 @@
 ;(require file/sha1)
 ;(require binaryio)
 (require threading)
-(require csv-reading)
 (require sugar)
 (require json)
 
@@ -17,22 +16,21 @@
 ;"opcode" : "$69",
 ;"mode" : "Immediate"
 
-(define OPS
-  (~> (open-input-file "6502_instructions.json")
-      (read-json)))
-
 (define hex-string->number
   (λ~> (substring 1)
        (string->number 16)))
 
-(define OP-VEC
+(define OPS
   (let ([v (make-vector 256 #f)])
-    (for ([op (in-list OPS)])
-      (match-let* ([(hash-table ('opcode opcode) ('name name) ('mode mode) ('bytes bytes)) op])
+    (for ([op (read-json (open-input-file "6502_instructions.json"))])
+      (match-let* ([(hash-table ('opcode opcode)
+                                ('name name)
+                                ('mode mode)
+                                ('bytes bytes)) op])
         (vector-set! v (hex-string->number opcode) (vector opcode name mode bytes))))
     v))
 
-(for ([op OP-VEC])
+(for ([op OPS])
   (displayln op))
 
 
