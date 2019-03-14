@@ -10,12 +10,6 @@
 (define 8KB  #x2000)
 (define iNES-identifier (bytes #x4e #x45 #x53 #x1a))
 
-;"bytes" : "2",
-;"description" : "Add with Carry",
-;"name" : "ADC",
-;"opcode" : "$69",
-;"mode" : "Immediate"
-
 (define hex-string->number
   (λ~> (substring 1)
        (string->number 16)))
@@ -33,14 +27,13 @@
 (for ([op OPS])
   (displayln op))
 
-
-;(string->number (substring (op 'opcode) 1) 16))
-
 ;; CONSTANTS ;;
 (define 1*PRG-BANK #x4000)
 (define 1*CHR-BANK #x2000)
-
-
+(define OPCODE 0)
+(define NAME 1)
+(define MODE 2)
+(define BYTES 3)
 
 (define (valid-ines-header? h)
   (for/and ([b (in-bytes h)]
