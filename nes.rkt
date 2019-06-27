@@ -36,17 +36,13 @@
 (define BYTES 3)
 
 (define (valid-ines-header? h)
-  (for/and ([b (in-bytes h)]
-            [n (in-bytes iNES-identifier)])
-    (equal? b b)))
+  (equal? h iNES-identifier))
 
 (define (filesize-matches-header? file-size
                                   prg-size
                                   chr-size)
-  (if (= (+ prg-size chr-size 16)
-         file-size)
-    "FILESIZE MATCHES HEADER"
-    "FILESIZE DOES NOT MATCH HEADER"))
+  (= (+ prg-size chr-size 16)
+        file-size)))
 
 (define (main rom-path)
   (define ROM (open-input-file rom-path #:mode 'binary))
