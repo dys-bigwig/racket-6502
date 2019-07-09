@@ -42,7 +42,7 @@
                                   prg-size
                                   chr-size)
   (= (+ prg-size chr-size 16)
-        file-size)))
+        file-size))
 
 (define (main rom-path)
   (define ROM (open-input-file rom-path #:mode 'binary))
