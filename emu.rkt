@@ -44,14 +44,17 @@
 (define (BEQ processor)
   (define PC (Processor-PC processor))
   (define MEM (Processor-MEM processor))
-  (define offset (vector-ref MEM (+ PC 1)))
+  (define offset (byte->twos-complement (vector-ref MEM (+ PC 1))))
   (define Z (Processor-Z processor))
   (emulate (Processor-copy processor
                            [PC (if (flag-set? Z)
-                                 (if (< offset 127)
-                                   (+ PC offset 2)
-                                   (+ PC (- offset 256) 2))
+                                 (+ PC offset 2)
                                  (+ PC 2))])) )
+
+(define (byte->twos-complement b)
+  (if (< b 127)
+    b
+    (- b 256)))
 
 (define (emulate processor)
   (if (>= (Processor-PC processor)
