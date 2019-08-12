@@ -51,7 +51,7 @@
 (define mode-zp/p
   (guard/p (or/p hex-lit/p
                  dec-lit/p)
-           (conjoin (<= _ #xFF))))
+           (<= _ #xFF)))
 
 (define mode-zp-x/p
   (do
