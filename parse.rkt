@@ -59,7 +59,7 @@
   (do
     (char/p #\#)
     (rand <- (guard/p num-lit/p
-                      (<= _ #xffff)))
+                      (<= _ #xFFFF)))
     (pure (IMM rand))))
 
 (struct ZP (val) #:transparent)
@@ -250,8 +250,10 @@
     (pure (OP-EXPR op rand))))
 
 (define expr/p
-  (many/p (or/p (try/p equ/p)
-                (try/p opcode&operand/p))
-          #:sep (many/p (char/p #\newline))))
+  (or/p (try/p equ/p)
+        (try/p opcode&operand/p)) )
 
-(parse-string expr/p "LDA #$22\nPI EQU 3.14\n\nJMP ($2000)")
+(define expr*/p
+  (many/p expr/p #:sep (many/p (char/p #\newline))))
+
+(parse-string expr*/p "PI EQU 3.14\nLDA #$41")
