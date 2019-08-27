@@ -1,259 +1,208 @@
 #lang racket
-(require megaparsack megaparsack/text)
-(require data/monad)
-(require data/functor)
-(require data/applicative)
 (require fancy-app)
-(require data/either)
+(require "src.rkt")
 
-(define hex-digit/p
-  (or/p (char-between/p #\a
-                        #\f)
-        (char-between/p #\A
-                        #\F)
-        digit/p))
+#| general |#
 
-(define hex-digit+/p (many+/p hex-digit/p))
+(define skip-char read-char)
 
-(define hex-lit/p
-  (do
-    (char/p #\$)
-    [num <- hex-digit+/p]
-    (pure (string->number (list->string num) 16))))
+#| whitespace |#
 
-(define dec-lit/p
-  (do
-    [num <- (many+/p digit/p)]
-    (pure (string->number (list->string num)))))
+(define (expect-char expected pred?)
+  (define c (peek-char))
+  (unless (pred? c)
+    (error (format "expected: ~s\nreceived ~s" expected (peek-char)))))
 
-(define num-lit/p
-  (do
-    (or/p (try/p hex-lit/p)
-          dec-lit/p)))
+(define (expect-str expected pred? len)
+  (define s (peek-string len 0))
+  (unless (pred? s)
+    (error "expected: ~s\nreceived: ~s" expected s)))
 
-(struct LABEL-REF (name) #:transparent)
+(define whitespace?
+  (memv _ (string->list "\t ")))
 
-(define label-ref/p
-  (do
-    [label <- (many+/p letter/p)]
-    (pure (LABEL-REF (list->string label)))))
+(define newline?
+  (char=? _ #\newline))
 
-(define x/p
-  (do (char/p #\,)
-    (char-ci/p #\x)))
+(define (skip-whitespace)
+  (when (whitespace? (peek-char))
+    (skip-char)
+    (skip-whitespace)))
 
-(define y/p
-  (do (char/p #\,)
-    (char-ci/p #\y)))
+(define (read-whitespace)
+  (expect-char '#\space whitespace?)
+  (read-char))
 
-(struct ACC ())
+(define (read-whitespace+)
+  (read-whitespace) 
+  (skip-whitespace))
 
-(define mode-acc/p
-  (do
-    (char-ci/p #\a)
-    (pure (ACC))))
+#| comments |#
 
-(struct IMM (val) #:transparent)
+(define (skip-comment)
+  (when (char=? #\; (peek-char))
+    (for ([c (in-port peek-char)]
+          #:break (char=? c #\newline))
+      (read-char))))
 
-(define mode-imm/p
-  (do
-    (char/p #\#)
-    (rand <- (guard/p num-lit/p
-                      (<= _ #xFFFF)))
-    (pure (IMM rand))))
+#| numbers |#
 
-(struct ZP (val) #:transparent)
+(define decimal-digit?
+  (memv _ (string->list "0123456789")))
 
-(define mode-zp/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (<= _ #xFF))]
-    (pure (ZP rand))))
+(define hex-digit?
+  (disjoin decimal-digit? (memv _ (string->list "abcdefABCDEF"))))
 
-(struct ZP-X (val) #:transparent)
+(define string-numeric?
+  string->number)
 
-(define mode-zp-x/p
-  (do
-    [rand <- mode-zp/p]
-    x/p
-    (pure (ZP-X (ZP-val rand)))))
+(define (read-decimal-digit)
+  (expect-char 'decimal-digit decimal-digit?)
+  (read-char))
 
-(struct ZP-Y (val) #:transparent)
+(define (read-decimal-digit*)
+  (if (decimal-digit? (peek-char))
+    (cons (read-decimal-digit) (read-decimal-digit*))
+    '()))
 
-(define mode-zp-y/p
-  (do
-    [rand <- mode-zp/p]
-    y/p
-    (pure (ZP-Y (ZP-val rand)))))
+(define (read-decimal-digit+)
+  (cons (read-decimal-digit)
+        (read-decimal-digit*)))
 
-(struct REL (offset) #:transparent)
+(define (read-hex-digit)
+  (expect-char 'hex-digit hex-digit?)
+  (read-char))
 
-(define mode-rel/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (<= _ #xFF))]
-    (pure (REL rand))))
+(define (read-hex-digit*)
+  (if (hex-digit? (peek-char))
+    (cons (read-hex-digit) (read-hex-digit*))
+    '()))
 
-(struct ABS (val) #:transparent)
+(define (read-hex-digit+)
+  (cons (read-hex-digit)
+        (read-hex-digit*)))
 
-(define mode-abs/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (conjoin (> _ #xFF)
-                               (<= _ #xFFFF)))]
-    (pure (ABS rand))))
+(define hex-string->number
+  (compose (string->number _ 16) list->string))
 
-(struct ABS-X (val) #:transparent)
+(define decimal-string->number
+  (compose (string->number _) list->string))
 
-(define mode-abs-x/p
-  (do
-    [rand <- mode-abs/p]
-    x/p
-    (pure (ABS-X (ABS-val rand)))))
+(define (parse-number)
+  (cond
+    [(char=? (peek-char) #\$) (skip-char)
+                              (hex-string->number (read-hex-digit+))]
+    [else (decimal-string->number (read-decimal-digit+))]))
 
-(struct ABS-Y (val) #:transparent)
+#| opcodes |#
 
-(define mode-abs-y/p
-  (do
-    [rand <- mode-abs/p]
-    y/p
-    (pure (ABS-Y (ABS-val rand)))))
+(struct OP-EXPR-TOKEN (opcode operand) #:transparent)
+(struct OPCODE-TOKEN ())
+(struct ADC OPCODE-TOKEN ()) (struct AND OPCODE-TOKEN ()) (struct ASL OPCODE-TOKEN ()) (struct BCC OPCODE-TOKEN ())
+(struct BCS OPCODE-TOKEN ()) (struct BEQ OPCODE-TOKEN ()) (struct BIT OPCODE-TOKEN ()) (struct BMI OPCODE-TOKEN ())
+(struct BNE OPCODE-TOKEN ()) (struct BPL OPCODE-TOKEN ()) (struct BRK OPCODE-TOKEN ()) (struct BVC OPCODE-TOKEN ())
+(struct BVS OPCODE-TOKEN ()) (struct CLC OPCODE-TOKEN ()) (struct CLD OPCODE-TOKEN ()) (struct CLI OPCODE-TOKEN ())
+(struct CLV OPCODE-TOKEN ()) (struct CMP OPCODE-TOKEN ()) (struct CPX OPCODE-TOKEN ()) (struct CPY OPCODE-TOKEN ())
+(struct DEC OPCODE-TOKEN ()) (struct DEX OPCODE-TOKEN ()) (struct DEY OPCODE-TOKEN ()) (struct EOR OPCODE-TOKEN ())
+(struct INC OPCODE-TOKEN ()) (struct INX OPCODE-TOKEN ()) (struct INY OPCODE-TOKEN ()) (struct JMP OPCODE-TOKEN ())
+(struct JSR OPCODE-TOKEN ()) (struct LDA OPCODE-TOKEN ()) (struct LDX OPCODE-TOKEN ()) (struct LDY OPCODE-TOKEN ())
+(struct LSR OPCODE-TOKEN ()) (struct NOP OPCODE-TOKEN ()) (struct ORA OPCODE-TOKEN ()) (struct PHA OPCODE-TOKEN ())
+(struct PHP OPCODE-TOKEN ()) (struct PLA OPCODE-TOKEN ()) (struct PLP OPCODE-TOKEN ()) (struct ROL OPCODE-TOKEN ())
+(struct ROR OPCODE-TOKEN ()) (struct RTI OPCODE-TOKEN ()) (struct RTS OPCODE-TOKEN ()) (struct SBC OPCODE-TOKEN ())
+(struct SEC OPCODE-TOKEN ()) (struct SED OPCODE-TOKEN ()) (struct SEI OPCODE-TOKEN ()) (struct STA OPCODE-TOKEN ())
+(struct STX OPCODE-TOKEN ()) (struct STY OPCODE-TOKEN ()) (struct TAX OPCODE-TOKEN ()) (struct TAY OPCODE-TOKEN ())
+(struct TXA OPCODE-TOKEN ()) (struct TSX OPCODE-TOKEN ()) (struct TXS OPCODE-TOKEN ()) (struct TYA OPCODE-TOKEN ())
 
-(struct IND (addr) #:transparent)
+(define (op-string->OPCODE-TOKEN op-str)
+  (case op-str
+    [("ADC") (ADC)]
+    [("AND") (AND)]
+    [("ASL") (ASL)]
+    [("BCC") (BCC)]
+    [("BCS") (BCS)]
+    [("BEQ") (BEQ)]
+    [("BIT") (BIT)]
+    [("BMI") (BMI)]
+    [("BNE") (BNE)]
+    [("BPL") (BPL)]
+    [("BRK") (BRK)]
+    [("BVC") (BVC)]
+    [("BVS") (BVS)]
+    [("CLC") (CLC)]
+    [("CLD") (CLD)]
+    [("CLI") (CLI)]
+    [("CLV") (CLV)]
+    [("CMP") (CMP)]
+    [("CPX") (CPX)]
+    [("CPY") (CPY)]
+    [("DEC") (DEC)]
+    [("DEX") (DEX)]
+    [("DEY") (DEY)]
+    [("EOR") (EOR)]
+    [("INC") (INC)]
+    [("INX") (INX)]
+    [("INY") (INY)]
+    [("JMP") (JMP)]
+    [("JSR") (JSR)]
+    [("LDA") (LDA)]
+    [("LDX") (LDX)]
+    [("LDY") (LDY)]
+    [("LSR") (LSR)]
+    [("NOP") (NOP)]
+    [("ORA") (ORA)]
+    [("PHA") (PHA)]
+    [("PHP") (PHA)]
+    [("PLA") (PLA)]
+    [("PLP") (PLP)]
+    [("ROL") (ROL)]
+    [("ROR") (ROR)]
+    [("RTI") (RTI)]
+    [("RTS") (RTS)]
+    [("SBC") (SBC)]
+    [("SEC") (SEC)]
+    [("SED") (SED)]
+    [("SEI") (SEI)]
+    [("STA") (STA)]
+    [("STX") (STX)]
+    [("STY") (STY)]
+    [("TAX") (TAX)]
+    [("TAY") (TAY)]
+    [("TXA") (TXA)]
+    [("TSX") (TSX)]
+    [("TXS") (TXS)]
+    [("TYA") (TYA)]))
 
-(define mode-ind/p
-  (do 
-    (char/p #\()
-    [rand <- (guard/p num-lit/p
-                      (conjoin (> _ #xFF)
-                               (<= _ #xFFFF)))]
-    (char/p #\))
-    (pure (IND rand))))
+(define opcode?
+  (member  _ '("ADC"  "AND"  "ASL"  "BCC" 
+               "BCS"  "BEQ"  "BIT"  "BMI" 
+               "BNE"  "BPL"  "BRK"  "BVC" 
+               "BVS"  "CLC"  "CLD"  "CLI" 
+               "CLV"  "CMP"  "CPX"  "CPY" 
+               "DEC"  "DEX"  "DEY"  "EOR" 
+               "INC"  "INX"  "INY"  "JMP" 
+               "JSR"  "LDA"  "LDX"  "LDY" 
+               "LSR"  "NOP"  "ORA"  "PHA" 
+               "PHP"  "PLA"  "PLP"  "ROL" 
+               "ROR"  "RTI"  "RTS"  "SBC" 
+               "SEC"  "SED"  "SEI"  "STA" 
+               "STX"  "STY"  "TAX"  "TAY" 
+               "TXA"  "TSX"  "TXS"  "TYA")))
 
-(struct IND-X (val) #:transparent)
+(define (read-opcode)
+  (expect-str 'opcode opcode? 3))
 
-(define mode-ind-x/p
-  (do
-    (char/p #\()
-    (rand <- mode-zp-x/p)
-    (char/p #\))
-    (pure (IND-X (ZP-X-val rand)))))
+(define (parse-opcode)
+  (read-opcode)
+  (op-string->OPCODE-TOKEN (read-string 3)))
 
-(struct IND-Y (val) #:transparent)
+#| op-exprs |#
 
-(define mode-ind-y/p
-  (do
-    (char/p #\()
-    (rand <- mode-zp-y/p)
-    (char/p #\))
-    (pure (IND-Y (ZP-Y-val rand)))))
 
-(struct IMPL () #:transparent)
-
-(define mode-impl/p
-  (do
-    void/p
-    (pure (IMPL))))
-
-(struct EQU (name val) #:transparent)
-
-(define equ/p
-  (do
-    [label <- (many+/p (char-not-in/p " "))]
-    (many+/p (char/p #\space))
-    (string-ci/p "EQU")
-    (many+/p (char/p #\space))
-    [val <- (many+/p (char-not-in/p "\n"))]
-    (pure (EQU (list->string label) (list->string val)))))
-
-(struct BYTE (val) #:transparent)
-
-(define byte/p
-  (do
-    (string-ci/p "BYTE")
-    (many+/p (char/p #\space))
-    [val <- num-lit/p]
-    (pure (BYTE val))))
-
-(struct OP-EXPR (opcode operand) #:transparent)
-(struct ADC ()) (struct AND ()) (struct ASL ()) (struct BCC ())
-(struct BCS ()) (struct BEQ ()) (struct BIT ()) (struct BMI ())
-(struct BNE ()) (struct BPL ()) (struct BRK ()) (struct BVC ())
-(struct BVS ()) (struct CLC ()) (struct CLD ()) (struct CLI ())
-(struct CLV ()) (struct CMP ()) (struct CPX ()) (struct CPY ())
-(struct DEC ()) (struct DEX ()) (struct DEY ()) (struct EOR ())
-(struct INC ()) (struct INX ()) (struct INY ()) (struct JMP ())
-(struct JSR ()) (struct LDA ()) (struct LDX ()) (struct LDY ())
-(struct LSR ()) (struct NOP ()) (struct ORA ()) (struct PHA ())
-(struct PHP ()) (struct PLA ()) (struct PLP ()) (struct ROL ())
-(struct ROR ()) (struct RTI ()) (struct RTS ()) (struct SBC ())
-(struct SEC ()) (struct SED ()) (struct SEI ()) (struct STA ())
-(struct STX ()) (struct STY ()) (struct TAX ()) (struct TAY ())
-(struct TXA ()) (struct TSX ()) (struct TXS ()) (struct TYA ())
-
-(define (op-string->OP op-str)
-  (define OP-hash
-    (hash "ADC" (ADC) "AND" (AND) "ASL" (ASL) "BCC" (BCC)
-          "BCS" (BCS) "BEQ" (BEQ) "BIT" (BIT) "BMI" (BMI)
-          "BNE" (BNE) "BPL" (BPL) "BRK" (BRK) "BVC" (BVC)
-          "BVS" (BVS) "CLC" (CLC) "CLD" (CLD) "CLI" (CLI)
-          "CLV" (CLV) "CMP" (CMP) "CPX" (CPX) "CPY" (CPY)
-          "DEC" (DEC) "DEX" (DEX) "DEY" (DEY) "EOR" (EOR)
-          "INC" (INC) "INX" (INX) "INY" (INY) "JMP" (JMP)
-          "JSR" (JSR) "LDA" (LDA) "LDX" (LDX) "LDY" (LDY)
-          "LSR" (LSR) "NOP" (NOP) "ORA" (ORA) "PHA" (PHA)
-          "PHP" (PHA) "PLA" (PLA) "PLP" (PLP) "ROL" (ROL)
-          "ROR" (ROR) "RTI" (RTI) "RTS" (RTS) "SBC" (SBC)
-          "SEC" (SEC) "SED" (SED) "SEI" (SEI) "STA" (STA)
-          "STX" (STX) "STY" (STY) "TAX" (TAX) "TAY" (TAY)
-          "TXA" (TXA) "TSX" (TSX) "TXS" (TXS) "TYA" (TYA)))
-  (hash-ref OP-hash op-str)) 
-
-(define opcode/p
-  (do
-    [op <- (or/p (try/p (string-ci/p "ADC")) (try/p (string-ci/p "AND")) (try/p (string-ci/p "ASL")) (try/p (string-ci/p "BCC"))
-                 (try/p (string-ci/p "BCS")) (try/p (string-ci/p "BEQ")) (try/p (string-ci/p "BIT")) (try/p (string-ci/p "BMI"))
-                 (try/p (string-ci/p "BNE")) (try/p (string-ci/p "BPL")) (try/p (string-ci/p "BRK")) (try/p (string-ci/p "BVC"))
-                 (try/p (string-ci/p "BVS")) (try/p (string-ci/p "CLC")) (try/p (string-ci/p "CLD")) (try/p (string-ci/p "CLI"))
-                 (try/p (string-ci/p "CLV")) (try/p (string-ci/p "CMP")) (try/p (string-ci/p "CPX")) (try/p (string-ci/p "CPY"))
-                 (try/p (string-ci/p "DEC")) (try/p (string-ci/p "DEX")) (try/p (string-ci/p "DEY")) (try/p (string-ci/p "EOR"))
-                 (try/p (string-ci/p "INC")) (try/p (string-ci/p "INX")) (try/p (string-ci/p "INY")) (try/p (string-ci/p "JMP")) 
-                 (try/p (string-ci/p "JSR")) (try/p (string-ci/p "LDA")) (try/p (string-ci/p "LDX")) (try/p (string-ci/p "LDY"))
-                 (try/p (string-ci/p "LSR")) (try/p (string-ci/p "NOP")) (try/p (string-ci/p "ORA")) (try/p (string-ci/p "PHA"))
-                 (try/p (string-ci/p "PHP")) (try/p (string-ci/p "PLA")) (try/p (string-ci/p "PLP")) (try/p (string-ci/p "ROL"))
-                 (try/p (string-ci/p "ROR")) (try/p (string-ci/p "RTI")) (try/p (string-ci/p "RTS")) (try/p (string-ci/p "SBC"))
-                 (try/p (string-ci/p "SEC")) (try/p (string-ci/p "SED")) (try/p (string-ci/p "SEI")) (try/p (string-ci/p "STA"))
-                 (try/p (string-ci/p "STX")) (try/p (string-ci/p "STY")) (try/p (string-ci/p "TAX")) (try/p (string-ci/p "TAY"))
-                 (try/p (string-ci/p "TXA")) (try/p (string-ci/p "TSX")) (try/p (string-ci/p "TXS")) (try/p (string-ci/p "TYA")))]
-    (pure (op-string->OP op))))
-
-(define operand/p
-  (or/p (try/p mode-acc/p)
-        (try/p mode-imm/p)
-        (try/p mode-zp/p)
-        (try/p mode-zp-x/p)
-        (try/p mode-zp-y/p)
-        (try/p mode-rel/p)
-        (try/p mode-abs/p)
-        (try/p mode-abs-x/p)
-        (try/p mode-abs-y/p)
-        (try/p mode-ind/p)
-        (try/p mode-ind-x/p)
-        (try/p mode-ind-y/p)
-        (try/p mode-impl/p)))
-
-(define opcode&operand/p
-  (do
-    [op <- opcode/p]
-    (char/p #\space)
-    [rand <- operand/p]
-    (pure (OP-EXPR op rand))))
-
-(define expr/p
-  (or/p (try/p equ/p)
-        (try/p opcode&operand/p)) )
-
-(define expr*/p
-  (many/p expr/p #:sep (many/p (char/p #\newline))))
-
-(parse-string expr*/p "PI EQU 3.14\nLDA #$41")
+(with-input-from-string " ADC $1A ;howdy\n wii "
+  (λ ()
+     (skip-whitespace)
+     (parse-opcode)
+     (read-whitespace+)
+     (parse-number)
+     (read-whitespace+)
+     (skip-comment)))
