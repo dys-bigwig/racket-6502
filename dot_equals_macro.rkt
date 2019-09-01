@@ -1,6 +1,5 @@
 #lang racket
 (require racket/stxparam
-         racket/splicing
          (for-syntax syntax/parse racket/base))
 
 (require lens)
