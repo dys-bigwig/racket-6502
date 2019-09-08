@@ -4,13 +4,18 @@
 (require "number.rkt")
 (require parser-tools/yacc)
 
-(define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag newline eof))
-(define-empty-tokens directives (equate db))
+
+
 (define-empty-tokens mnemonics (ADC AND ASL BCC BCS BEQ BIT BMI BNE BPL BRK BVC BVS CLC
                                     CLD CLI CLV CMP CPX CPY DEC DEX DEY EOR INC INX INY JMP
                                     JSR LDA LDX LDY LSR NOP ORA PHA PHP PLA PLP ROL ROR RTI
                                     RTS SBC SEC SED SEI STA STX STY TAX TAY TSX TXA TXS TYA))
+
+(define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag newline eof))
+(define-empty-tokens directives (equate db))
+(define-tokens opcodes (opcode))
 (define-tokens atoms (8-bit-int 16-bit-int identifier string))
+(define-empty-tokens indexes (comma-x comma-y))
 
 (define-lex-abbrev identifier/l (:& (complement number/l)
                                     (complement opcode/l)
@@ -41,8 +46,8 @@
                                            "JSR" "LDA" "LDX" "LDY" "LSR" "NOP" "ORA" "PHA" "PHP" "PLA" "PLP" "ROL" "ROR" "RTI"
                                            "RTS" "SBC" "SEC" "SED" "SEI" "STA" "STX" "STY" "TAX" "TAY" "TSX" "TXA" "TXS" "TYA"))
 
-(define-lex-abbrev equate/l (:: (:or #\E #\e) (:or #\Q #\q) (:or #\U #\u)))
-(define-lex-abbrev db/l (:: (:or #\D #\d) (:or #\B #\b)))
+(define-lex-abbrev equate/l (:: (:char-ci #\E) (:char-ci #\Q) (:char-ci #\U)))
+(define-lex-abbrev db/l (:: (:char-ci #\D) (:char-ci #\B)))
 (define-lex-abbrev directive/l (:or equate/l db/l))
 
 (define (mnemonic->token m)
@@ -72,6 +77,10 @@
     [mnemonic/l (mnemonic->token lexeme)]
     [(:+ numeric) (string->int-token lexeme)]
     [(:: #\$ (:+ hex-digit)) (string->int-token (substring lexeme 1) #:base 16)]
+    [(:: #\, (:char-ci #\X)) (token-comma-x)]
+    [(:: #\, (:char-ci #\Y)) (token-comma-y)]
+    [#\( (token-lparen)]
+    [#\) (token-rparen)]
     [(eof) (token-newline)]))
 
 (struct Opcode (name operand) #:transparent)
@@ -86,42 +95,106 @@
 
 (define test-parse
   (parser
-    [tokens mnemonics atoms delimiters]
+    [tokens mnemonics atoms delimiters indexes]
     [start Line*]
     [end newline]
+    [precs (right comma-x)]
     [error (λ (tok-ok? name val)
               (error (format "~a ~a" name val)))]
+    [debug "debug.txt"]
     [grammar
       (Line*
         [(Line Line*) (cons $1 $2)]
         [() '()])
       (Line
-        [(Opcode-Statement) $1])
-      (Opcode-Statement
-        [(Immediate-Opcode Immediate-Operand) (Opcode $1 $2)]
-        [(Zero-Page-Opcode Zero-Page-Operand) (Opcode $1 $2)]
-        [(Absolute-Opcode Absolute-Operand) (Opcode $1 $2)])
-      (Immediate-Opcode
-        [(ADC) 'ADC] [(AND) 'AND] [(CMP) 'CMP] [(CPX) 'CPX] [(CPY) 'CPY] [(EOR) 'EOR] [(LDA) 'LDA] [(LDX) 'LDX]
-        [(LDY) 'LDY] [(ORA) 'ORA] [(PHA) 'PHA] [(PHP) 'PHP] [(SBC) 'SBC])
-      (Zero-Page-Opcode
-        [(ADC) 'ADC] [(AND) 'AND] [(ASL) 'ASL] [(BIT) 'BIT] [(CMP) 'CMP] [(CPX) 'CPX] [(CPY) 'CPY] [(DEC) 'DEC]
-        [(EOR) 'EOR] [(INC) 'INC] [(LDA) 'LDA] [(LDX) 'LDX] [(LDY) 'LDY] [(LSR) 'LSR] [(ORA) 'ORA] [(ROL) 'ROL]
-        [(ROR) 'ROR] [(SBC) 'SBC] [(STA) 'STA] [(STX) 'STX] [(STY) 'STY])
-      (Zero-Page-X-Opcode
-        [(ADC) 'ADC] [(AND) 'AND] [(ASL) 'ASL] [(CMP) 'CMP] [(DEC) 'DEC] [(EOR) 'EOR] [(INC) 'INC] [(LDA) 'LDA]
-        [(LDY) 'LDY] [(LSR) 'LSR] [(ORA) 'ORA] [(ROL) 'ROL] [(ROR) 'ROR] [(SBC) 'SBC] [(STA) 'STA] [(STY) 'STY])
-      (Absolute-Opcode
-        [(LDY) 'LDY])
-      (Int
-        [(8-bit-int) $1]
-        [(16-bit-int) $1])
-      (Immediate-Operand
-        [(hashtag Int) (Operand $2 'IMM)])
-      (Zero-Page-Operand
+        [(Instruction) $1])
+      (Instruction
+        [(ADC ADC-Operand) (Opcode 'ADC $2)]
+        ;[(AND AND-Operand) (Opcode $1 $2)]
+        ;[(ASL ASL-Operand) (Opcode $1 $2)]
+        ;[(BCC BCC-Operand) (Opcode $1 $2)]
+        ;[(BCS BCS-Operand) (Opcode $1 $2)]
+        ;[(BEQ BEQ-Operand) (Opcode $1 $2)]
+        ;[(BIT BIT-Operand) (Opcode $1 $2)]
+        ;[(BMI BMI-Operand) (Opcode $1 $2)]
+        ;[(BNE BNE-Operand) (Opcode $1 $2)]
+        ;[(BPL BPL-Operand) (Opcode $1 $2)]
+        ;[(BRK BRK-Operand) (Opcode $1 $2)]
+        ;[(BVC BVC-Operand) (Opcode $1 $2)]
+        ;[(BVS BVS-Operand) (Opcode $1 $2)]
+        ;[(CLC CLC-Operand) (Opcode $1 $2)]
+        ;[(CLD CLD-Operand) (Opcode $1 $2)]
+        ;[(CLI CLI-Operand) (Opcode $1 $2)]
+        ;[(CLV CLV-Operand) (Opcode $1 $2)]
+        ;[(CMP CMP-Operand) (Opcode $1 $2)]
+        ;[(CPX CPX-Operand) (Opcode $1 $2)]
+        ;[(CPY CPY-Operand) (Opcode $1 $2)]
+        ;[(DEC DEC-Operand) (Opcode $1 $2)]
+        ;[(DEX DEX-Operand) (Opcode $1 $2)]
+        ;[(DEY DEY-Operand) (Opcode $1 $2)]
+        ;[(EOR EOR-Operand) (Opcode $1 $2)]
+        ;[(INC INC-Operand) (Opcode $1 $2)]
+        ;[(INX INX-Operand) (Opcode $1 $2)]
+        ;[(INY INY-Operand) (Opcode $1 $2)]
+        ;[(JMP JMP-Operand) (Opcode $1 $2)]
+        ;[(JSR JSR-Operand) (Opcode $1 $2)]
+        ;[(LDA LDA-Operand) (Opcode $1 $2)]
+        ;[(LDX LDX-Operand) (Opcode $1 $2)]
+        ;[(LDY LDY-Operand) (Opcode $1 $2)]
+        ;[(LSR LSR-Operand) (Opcode $1 $2)]
+        ;[(NOP NOP-Operand) (Opcode $1 $2)]
+        ;[(ORA ORA-Operand) (Opcode $1 $2)]
+        ;[(PHA PHA-Operand) (Opcode $1 $2)]
+        ;[(PHP PHP-Operand) (Opcode $1 $2)]
+        ;[(PLA PLA-Operand) (Opcode $1 $2)]
+        ;[(PLP PLP-Operand) (Opcode $1 $2)]
+        ;[(ROL ROL-Operand) (Opcode $1 $2)]
+        ;[(ROR ROR-Operand) (Opcode $1 $2)]
+        ;[(RTI RTI-Operand) (Opcode $1 $2)]
+        ;[(RTS RTS-Operand) (Opcode $1 $2)]
+        ;[(SBC SBC-Operand) (Opcode $1 $2)]
+        ;[(SEC SEC-Operand) (Opcode $1 $2)]
+        ;[(SED SED-Operand) (Opcode $1 $2)]
+        ;[(SEI SEI-Operand) (Opcode $1 $2)]
+        ;[(STA STA-Operand) (Opcode $1 $2)]
+        ;[(STX STX-Operand) (Opcode $1 $2)]
+        ;[(STY STY-Operand) (Opcode $1 $2)]
+        ;[(TAX TAX-Operand) (Opcode $1 $2)]
+        ;[(TAY TAY-Operand) (Opcode $1 $2)]
+        ;[(TSX TSX-Operand) (Opcode $1 $2)]
+        ;[(TXA TXA-Operand) (Opcode $1 $2)]
+        ;[(TXS TXS-Operand) (Opcode $1 $2)]
+        ;[(TYA TYA-Operand) (Opcode $1 $2)]
+        )
+      (ADC-Operand
+        [(IMM-Operand) $1]
+        [(ZP-Operand) $1]
+        [(ZPX-Operand) $1]
+        [(ZPY-Operand) $1]
+        [(ABS-Operand) $1]
+        [(ABSX-Operand) $1]
+        [(ABSY-Operand) $1]
+        [(INDX-Operand) $1]
+        [(INDY-Operand) $1])
+      (IMM-Operand
+        [(hashtag 8-bit-int) (Operand $2 'IMM)]
+        [(hashtag 16-bit-int) (Operand $2 'IMM)])
+      (ZP-Operand
         [(8-bit-int) (Operand $1 'ZP)])
-      (Absolute-Operand
-        [(16-bit-int) (Operand $1 'ABS)])]))
+      (ZPX-Operand
+        [(8-bit-int comma-x) (Operand $1 'ZPX)])
+      (ZPY-Operand
+        [(8-bit-int comma-y) (Operand $1 'ZPY)])
+      (ABS-Operand
+        [(16-bit-int) (Operand $1 'ABS)])
+      (ABSX-Operand
+        [(16-bit-int comma-x) (Operand $1 'ABSX)])
+      (ABSY-Operand
+        [(16-bit-int comma-y) (Operand $1 'ABSY)])
+      (INDX-Operand
+        [(lparen 8-bit-int comma-x rparen) (Operand $2 'INDX)])
+      (INDY-Operand
+        [(lparen 8-bit-int comma-y rparen) (Operand $2 'INDY)])]))
 
 (define (lex+parse str)
   (define in (open-input-string str))
@@ -129,4 +202,4 @@
              #:break (equal? line '()))
     (car line)))
 
-(lex+parse "LDY $400")
+(lex+parse "ADC ($42,x)")
