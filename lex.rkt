@@ -4,18 +4,11 @@
 (require "number.rkt")
 (require parser-tools/yacc)
 
-
-
-(define-empty-tokens mnemonics (ADC AND ASL BCC BCS BEQ BIT BMI BNE BPL BRK BVC BVS CLC
-                                    CLD CLI CLV CMP CPX CPY DEC DEX DEY EOR INC INX INY JMP
-                                    JSR LDA LDX LDY LSR NOP ORA PHA PHP PLA PLP ROL ROR RTI
-                                    RTS SBC SEC SED SEI STA STX STY TAX TAY TSX TXA TXS TYA))
-
-(define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag newline eof))
+(define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag comma newline eof))
 (define-empty-tokens directives (equate db))
-(define-tokens opcodes (opcode))
+(define-tokens mnemonics (mnemonic))
 (define-tokens atoms (8-bit-int 16-bit-int identifier string))
-(define-empty-tokens indexes (comma-x comma-y))
+(define-empty-tokens letters (A X Y))
 
 (define-lex-abbrev identifier/l (:& (complement number/l)
                                     (complement opcode/l)
@@ -50,21 +43,6 @@
 (define-lex-abbrev db/l (:: (:char-ci #\D) (:char-ci #\B)))
 (define-lex-abbrev directive/l (:or equate/l db/l))
 
-(define (mnemonic->token m)
-  (case m
-    [("ADC") (token-ADC)] [("AND")  (token-AND)] [("ASL")  (token-ASL)] [("BCC")  (token-BCC)] [("BCS")  (token-BCS)]
-    [("BEQ") (token-BEQ)] [("BIT")  (token-BIT)] [("BMI")  (token-BMI)] [("BNE")  (token-BNE)] [("BPL")  (token-BPL)]
-    [("BRK") (token-BRK)] [("BVC")  (token-BVC)] [("BVS")  (token-BVS)] [("CLC")  (token-CLC)] [("CLD")  (token-CLD)]
-    [("CLI") (token-CLI)] [("CLV")  (token-CLV)] [("CMP")  (token-CMP)] [("CPX")  (token-CPX)] [("CPY")  (token-CPY)] 
-    [("DEC") (token-DEC)] [("DEX")  (token-DEX)] [("DEY")  (token-DEY)] [("EOR")  (token-EOR)] [("INC")  (token-INC)]
-    [("INX") (token-INX)] [("INY")  (token-INY)] [("JMP")  (token-JMP)] [("JSR")  (token-JSR)] [("LDA")  (token-LDA)]
-    [("LDX") (token-LDX)] [("LDY")  (token-LDY)] [("LSR")  (token-LSR)] [("NOP")  (token-NOP)] [("ORA")  (token-ORA)] 
-    [("PHA") (token-PHA)] [("PHP")  (token-PHP)] [("PLA")  (token-PLA)] [("PLP")  (token-PLP)] [("ROL")  (token-ROL)]
-    [("ROR") (token-ROR)] [("RTI")  (token-RTI)] [("RTS")  (token-RTS)] [("SBC")  (token-SBC)] [("SEC")  (token-SEC)]
-    [("SED") (token-SED)] [("SEI")  (token-SEI)] [("STA")  (token-STA)] [("STX")  (token-STX)] [("STY")  (token-STY)]
-    [("TAX") (token-TAX)] [("TAY")  (token-TAY)] [("TSX")  (token-TSX)] [("TXA")  (token-TXA)] [("TXS")  (token-TXS)]
-    [("TYA") (token-TYA)]))
-
 (define (string->int-token s #:base [base 10])
   (define int (string->number s base))
   ((if (> #xFF int) token-8-bit-int token-16-bit-int) int))
@@ -74,31 +52,25 @@
     [(:+ (:or #\space #\tab)) (test-lex input-port)]
     [(:+ #\newline) (token-newline)]
     [#\# (token-hashtag)]
-    [mnemonic/l (mnemonic->token lexeme)]
+    [mnemonic/l (token-mnemonic lexeme)]
     [(:+ numeric) (string->int-token lexeme)]
     [(:: #\$ (:+ hex-digit)) (string->int-token (substring lexeme 1) #:base 16)]
-    [(:: #\, (:char-ci #\X)) (token-comma-x)]
-    [(:: #\, (:char-ci #\Y)) (token-comma-y)]
     [#\( (token-lparen)]
     [#\) (token-rparen)]
+    [#\, (token-comma)]
+    [(:char-ci #\A) (token-A)]
+    [(:char-ci #\X) (token-X)]
+    [(:char-ci #\Y) (token-Y)]
     [(eof) (token-newline)]))
 
 (struct Opcode (name operand) #:transparent)
-(struct Operand (val mode) #:transparent)
-
-(define-syntax (Zero-Page-X-Opcode stx)
-  (syntax-case stx ()
-    [(_ ops ...)
-     #`'(Zero-Page-X-Opcode
-         #,@(for/list ([op (syntax->list #'(ops ...))])
-              #`((#,op) (quote #,op))))]))
+(struct Operand (val mode index) #:transparent)
 
 (define test-parse
   (parser
-    [tokens mnemonics atoms delimiters indexes]
+    [tokens mnemonics atoms delimiters letters]
     [start Line*]
     [end newline]
-    [precs (right comma-x)]
     [error (λ (tok-ok? name val)
               (error (format "~a ~a" name val)))]
     [debug "debug.txt"]
@@ -107,94 +79,22 @@
         [(Line Line*) (cons $1 $2)]
         [() '()])
       (Line
-        [(Instruction) $1])
-      (Instruction
-        [(ADC ADC-Operand) (Opcode 'ADC $2)]
-        ;[(AND AND-Operand) (Opcode $1 $2)]
-        ;[(ASL ASL-Operand) (Opcode $1 $2)]
-        ;[(BCC BCC-Operand) (Opcode $1 $2)]
-        ;[(BCS BCS-Operand) (Opcode $1 $2)]
-        ;[(BEQ BEQ-Operand) (Opcode $1 $2)]
-        ;[(BIT BIT-Operand) (Opcode $1 $2)]
-        ;[(BMI BMI-Operand) (Opcode $1 $2)]
-        ;[(BNE BNE-Operand) (Opcode $1 $2)]
-        ;[(BPL BPL-Operand) (Opcode $1 $2)]
-        ;[(BRK BRK-Operand) (Opcode $1 $2)]
-        ;[(BVC BVC-Operand) (Opcode $1 $2)]
-        ;[(BVS BVS-Operand) (Opcode $1 $2)]
-        ;[(CLC CLC-Operand) (Opcode $1 $2)]
-        ;[(CLD CLD-Operand) (Opcode $1 $2)]
-        ;[(CLI CLI-Operand) (Opcode $1 $2)]
-        ;[(CLV CLV-Operand) (Opcode $1 $2)]
-        ;[(CMP CMP-Operand) (Opcode $1 $2)]
-        ;[(CPX CPX-Operand) (Opcode $1 $2)]
-        ;[(CPY CPY-Operand) (Opcode $1 $2)]
-        ;[(DEC DEC-Operand) (Opcode $1 $2)]
-        ;[(DEX DEX-Operand) (Opcode $1 $2)]
-        ;[(DEY DEY-Operand) (Opcode $1 $2)]
-        ;[(EOR EOR-Operand) (Opcode $1 $2)]
-        ;[(INC INC-Operand) (Opcode $1 $2)]
-        ;[(INX INX-Operand) (Opcode $1 $2)]
-        ;[(INY INY-Operand) (Opcode $1 $2)]
-        ;[(JMP JMP-Operand) (Opcode $1 $2)]
-        ;[(JSR JSR-Operand) (Opcode $1 $2)]
-        ;[(LDA LDA-Operand) (Opcode $1 $2)]
-        ;[(LDX LDX-Operand) (Opcode $1 $2)]
-        ;[(LDY LDY-Operand) (Opcode $1 $2)]
-        ;[(LSR LSR-Operand) (Opcode $1 $2)]
-        ;[(NOP NOP-Operand) (Opcode $1 $2)]
-        ;[(ORA ORA-Operand) (Opcode $1 $2)]
-        ;[(PHA PHA-Operand) (Opcode $1 $2)]
-        ;[(PHP PHP-Operand) (Opcode $1 $2)]
-        ;[(PLA PLA-Operand) (Opcode $1 $2)]
-        ;[(PLP PLP-Operand) (Opcode $1 $2)]
-        ;[(ROL ROL-Operand) (Opcode $1 $2)]
-        ;[(ROR ROR-Operand) (Opcode $1 $2)]
-        ;[(RTI RTI-Operand) (Opcode $1 $2)]
-        ;[(RTS RTS-Operand) (Opcode $1 $2)]
-        ;[(SBC SBC-Operand) (Opcode $1 $2)]
-        ;[(SEC SEC-Operand) (Opcode $1 $2)]
-        ;[(SED SED-Operand) (Opcode $1 $2)]
-        ;[(SEI SEI-Operand) (Opcode $1 $2)]
-        ;[(STA STA-Operand) (Opcode $1 $2)]
-        ;[(STX STX-Operand) (Opcode $1 $2)]
-        ;[(STY STY-Operand) (Opcode $1 $2)]
-        ;[(TAX TAX-Operand) (Opcode $1 $2)]
-        ;[(TAY TAY-Operand) (Opcode $1 $2)]
-        ;[(TSX TSX-Operand) (Opcode $1 $2)]
-        ;[(TXA TXA-Operand) (Opcode $1 $2)]
-        ;[(TXS TXS-Operand) (Opcode $1 $2)]
-        ;[(TYA TYA-Operand) (Opcode $1 $2)]
-        )
-      (ADC-Operand
-        [(IMM-Operand) $1]
-        [(ZP-Operand) $1]
-        [(ZPX-Operand) $1]
-        [(ZPY-Operand) $1]
-        [(ABS-Operand) $1]
-        [(ABSX-Operand) $1]
-        [(ABSY-Operand) $1]
-        [(INDX-Operand) $1]
-        [(INDY-Operand) $1])
-      (IMM-Operand
-        [(hashtag 8-bit-int) (Operand $2 'IMM)]
-        [(hashtag 16-bit-int) (Operand $2 'IMM)])
-      (ZP-Operand
-        [(8-bit-int) (Operand $1 'ZP)])
-      (ZPX-Operand
-        [(8-bit-int comma-x) (Operand $1 'ZPX)])
-      (ZPY-Operand
-        [(8-bit-int comma-y) (Operand $1 'ZPY)])
-      (ABS-Operand
-        [(16-bit-int) (Operand $1 'ABS)])
-      (ABSX-Operand
-        [(16-bit-int comma-x) (Operand $1 'ABSX)])
-      (ABSY-Operand
-        [(16-bit-int comma-y) (Operand $1 'ABSY)])
-      (INDX-Operand
-        [(lparen 8-bit-int comma-x rparen) (Operand $2 'INDX)])
-      (INDY-Operand
-        [(lparen 8-bit-int comma-y rparen) (Operand $2 'INDY)])]))
+        [(mnemonic Operand?) (Opcode $1 $2)])
+      (Int
+        [(8-bit-int) $1]
+        [(16-bit-int) $1])
+      (Operand?
+        [(hashtag Int) $2]
+        [(8-bit-int Index?) (Operand $1 'ZP $2)]
+        [(16-bit-int Index?) (Operand $1 'ABS $2)]
+        [(lparen 8-bit-int comma X rparen) (Operand $2 'IND 'X)]
+        [(lparen 8-bit-int rparen comma Y) (Operand $2 'IND 'Y)]
+        [() (Operand #f 'IMP #f)]
+        [(A) 'A])
+      (Index?
+        [(X) 'X]
+        [(Y) 'Y]
+        [() #f]) ]))
 
 (define (lex+parse str)
   (define in (open-input-string str))
