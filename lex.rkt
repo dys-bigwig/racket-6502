@@ -4,8 +4,6 @@
 (require "number.rkt")
 (require parser-tools/yacc)
 
-
-
 (define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag comma newline eof))
 (define-empty-tokens directives (equate db))
 (define-tokens mnemonics (mnemonic))
