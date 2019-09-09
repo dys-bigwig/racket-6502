@@ -86,14 +86,14 @@
     [grammar
       (Line*
         [(Line Line*) (cons $1 $2)]
-        [() '()])
+        [() 'eof])
       (Line
         [(mnemonic Operand?) (Opcode $1 $2)])
       (Int
         [(8-bit-int) $1]
         [(16-bit-int) $1])
       (Operand?
-        [(hashtag Int) $2]
+        [(hashtag Int) (Operand $2 'IMM #f)]
         [(8-bit-int Index?) (Operand $1 'ZP $2)]
         [(16-bit-int Index?) (Operand $1 'ABS $2)]
         [(lparen Int Index?) (Operand $2 'IND $3)]
@@ -113,7 +113,7 @@
 (define (lex+parse str)
   (define in (open-input-string str))
   (for/list ([line (in-producer (thunk (test-parse (thunk (test-lex in)))))]
-             #:break (equal? line '()))
+             #:break (equal? line 'eof))
     (car line)))
 
-(lex+parse "JMP $1100,x") ; check for incorrect op/mode combinations in next phase
+(lex+parse "INC $00,x\nLDA #$22")
