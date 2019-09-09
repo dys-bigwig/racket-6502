@@ -116,4 +116,4 @@
              #:break (equal? line '()))
     (car line)))
 
-(lex+parse "JMP $1100,x")
+(lex+parse "JMP $1100,x") ; check for incorrect op/mode combinations in next phase
