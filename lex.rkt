@@ -92,8 +92,8 @@
         [(16-bit-int) $1])
       (Operand?
         [(hashtag Int) (Operand $2 'IMM #f)]
-        [(8-bit-int X/Y?) (Operand $1 'ZP $2)]
-        [(16-bit-int X/Y?) (Operand $1 'ABS $2)]
+        [(8-bit-int Indexed?) (Operand $1 'ZP $2)]
+        [(16-bit-int Indexed?) (Operand $1 'ABS $2)]
         [(lparen Int Indirect) (Operand $2 'IND $3)]
         [(A) 'A]
         [() (Operand #f 'IMP #f)])
@@ -106,10 +106,8 @@
         [() (void)])
       (Indirect
         [(Rparen? Indexed?) $2])
-      (Indexed
-        [(comma X/Y? Rparen?) $2])
       (Indexed?
-        [(Indexed) $1]
+        [(comma X/Y? Rparen?) $2]
         [() #f])]))
 
 ;JMP ($4008) | LDA ($22,x) | LDA ($22),y
@@ -120,4 +118,4 @@
              #:break (equal? line 'eof))
     (car line)))
 
-(lex+parse "INC ($1100)")
+(lex+parse "INC $00,y")
