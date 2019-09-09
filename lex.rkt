@@ -4,6 +4,8 @@
 (require "number.rkt")
 (require parser-tools/yacc)
 
+
+
 (define-empty-tokens delimiters (lparen rparen lbracket dollar rbracket hashtag comma newline eof))
 (define-empty-tokens directives (equate db))
 (define-tokens mnemonics (mnemonic))
@@ -66,6 +68,13 @@
 (struct Opcode (name operand) #:transparent)
 (struct Operand (val mode index) #:transparent)
 
+(define-syntax (Zero-Page-X-Opcode stx)
+  (syntax-case stx ()
+    [(_ ops ...)
+     #`'(Zero-Page-X-Opcode
+         #,@(for/list ([op (syntax->list #'(ops ...))])
+              #`((#,op) (quote #,op))))]))
+
 (define test-parse
   (parser
     [tokens mnemonics atoms delimiters letters]
@@ -87,14 +96,19 @@
         [(hashtag Int) $2]
         [(8-bit-int Index?) (Operand $1 'ZP $2)]
         [(16-bit-int Index?) (Operand $1 'ABS $2)]
-        [(lparen 8-bit-int comma X rparen) (Operand $2 'IND 'X)]
-        [(lparen 8-bit-int rparen comma Y) (Operand $2 'IND 'Y)]
-        [() (Operand #f 'IMP #f)]
-        [(A) 'A])
-      (Index?
+        [(lparen Int Index?) (Operand $2 'IND $3)]
+        [(A) 'A]
+        [() (Operand #f 'IMP #f)])
+      (X/Y
         [(X) 'X]
-        [(Y) 'Y]
-        [() #f]) ]))
+        [(Y) 'Y])
+      (Rparen?
+        [(rparen) (void)]
+        [() (void)])
+      (Index?
+        [(Rparen? comma X/Y Rparen?) $3]
+        [(rparen) #f]
+        [() #f])]))
 
 (define (lex+parse str)
   (define in (open-input-string str))
@@ -102,4 +116,4 @@
              #:break (equal? line '()))
     (car line)))
 
-(lex+parse "ADC ($42,x)")
+(lex+parse "JMP $1100,x")
