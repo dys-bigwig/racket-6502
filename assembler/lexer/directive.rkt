@@ -2,7 +2,7 @@
 (require (only-in parser-tools/lex define-lex-abbrev)
          (prefix-in : parser-tools/lex-sre))
 (require "transformer.rkt")
-(provide all-defined-out)
+(provide (all-defined-out))
 
 (define-lex-abbrev equate/l (:: (:char-ci #\E) (:char-ci #\Q) (:char-ci #\U)))
 
