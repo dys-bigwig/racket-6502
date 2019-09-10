@@ -1,3 +1,25 @@
+#lang racket/base
+(require "../lexer/lex.rkt")
+(require parser-tools/yacc)
+(provide lex+parse)
+
+(struct Instruction (name operand) #:transparent)
+(struct Operand (val mode index) #:transparent)
+
+(define parse
+  (parser
+    [tokens mnemonics atoms delimiters letters]
+    [start Line*]
+    [end eof]
+    [error (λ (tok-ok? name val)
+              (error (format "~a ~a" name val)))]
+    ;[debug "debug.txt"]
+    ;[yacc-output "out.y"]
+    [grammar
+      (Line*
+        [(Line Line*) (cons $1 $2)]
+        [() '()])
+      (Line
         [(mnemonic Operand?) (Instruction $1 $2)])
       (Operand?
         [() (Operand #f 'IMP #f)]
