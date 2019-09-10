@@ -16,8 +16,7 @@
 
 (define lex
   (lexer
-    [(:+ (:or #\space #\tab)) (lex input-port)]
-    [(:+ #\newline) (token-newline)]
+    [(:+ (:or #\space #\tab #\newline)) (lex input-port)]
     [#\# (token-hashtag)]
     [mnemonic/l (token-mnemonic lexeme)]
     [(:+ numeric) (token-int (string->number lexeme))]
@@ -27,5 +26,4 @@
     [#\, (token-comma)]
     [(:char-ci #\A) (token-A)]
     [(:char-ci #\X) (token-X)]
-    [(:char-ci #\Y) (token-Y)]
-    [(eof) (token-newline)]))
+    [(:char-ci #\Y) (token-Y)]))
