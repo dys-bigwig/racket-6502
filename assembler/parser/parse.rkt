@@ -1,10 +1,24 @@
 #lang racket/base
-(require "../lexer/lex.rkt")
-(require parser-tools/yacc)
-(provide lex+parse)
+(require "../lexer/lex.rkt"
+         parser-tools/yacc
+         racket/require)
+(provide lex+parse
+         (rename-out (Instruction-name get-instruction-name)
+                     (Instruction-operand get-operand)
+                     (Operand-val get-operand-val)
+                     (Operand-index get-operand-index)
+                     (Label-name get-label-name))
+         get-operand-mode
+         Instruction?
+         Label?)
+
+(define (get-operand-mode operand)
+  (cons (Operand-mode operand)
+        (Operand-index operand)))
 
 (struct Instruction (name operand) #:transparent)
 (struct Operand (val mode index) #:transparent)
+(struct Label (name) #:transparent)
 
 (define parse
   (parser
@@ -20,7 +34,8 @@
         [(Line Line*) (cons $1 $2)]
         [() '()])
       (Line
-        [(mnemonic Operand?) (Instruction $1 $2)])
+        [(mnemonic Operand?) (Instruction (string->symbol $1) $2)]
+        [(identifier colon) (Label $1)])
       (Operand?
         [() (Operand #f 'IMP #f)]
         [(A) (Operand #f 'A #f)]
