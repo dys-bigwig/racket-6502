@@ -1,26 +1,4 @@
-#lang racket/base
-(require "../lex/lex.rkt")
-(require parser-tools/yacc
-         (only-in racket/function thunk))
-
-(struct Opcode (name operand) #:transparent)
-(struct Operand (val mode index) #:transparent)
-
-(define parse
-  (parser
-    [tokens mnemonics atoms delimiters letters]
-    [start Line*]
-    [end newline]
-    [error (λ (tok-ok? name val)
-              (error (format "~a ~a" name val)))]
-    ;[debug "debug.txt"]
-    ;[yacc-output "out.y"]
-    [grammar
-      (Line*
-        [(Line Line*) (cons $1 $2)]
-        [() 'eof])
-      (Line
-        [(mnemonic Operand?) (Opcode $1 $2)])
+        [(mnemonic Operand?) (Instruction $1 $2)])
       (Operand?
         [() (Operand #f 'IMP #f)]
         [(A) (Operand #f 'A #f)]
@@ -38,10 +16,11 @@
         [(rparen Y?) $2]
         [(comma X rparen) 'X])]))
 
-(define (lex+parse str)
+(define (parse-string str)
   (define in (open-input-string str))
-  (for/list ([line (in-producer (thunk (parse (thunk (lex in)))))]
-             #:break (equal? line 'eof))
-    (car line)))
+  (parse (λ () (lex in))))
 
-(lex+parse "INC ($00),y\nLDA #$22")
+(define (lex+parse path)
+  (call-with-input-file path
+    (λ (in) 
+       (parse (λ () (lex in))))))
