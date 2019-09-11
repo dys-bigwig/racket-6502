@@ -14,8 +14,8 @@
                                     (define operand (get-operand instruction))
                                     (define value (get-operand-value operand))
                                     (define mode (get-operand-mode operand))
-                                    (define instruction-length (lookup-length name mode))
-                                    (values (+ pc instruction-length)
+                                    (define len (instruction-length name mode))
+                                    (values (+ pc len)
                                             labels)]
       [(? Label? label) (values pc
                                 (hash-set labels

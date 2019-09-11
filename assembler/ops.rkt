@@ -1,7 +1,7 @@
 #lang racket
 (require lens)
-(provide lookup-length)
 (require json fancy-app)
+(provide instruction-length)
 (define hex-string->number (compose (string->number _ 16)
                                     (substring _ 1)))
 
@@ -31,17 +31,26 @@
 (define (lookup name mode)
   (lens-view (hash-ref-nested-lens name mode) instructions))
 
-
-(define (lookup-length name mode)
-  (case name
-    [(JMP) 3]
-    [(BEQ) 2]
-    [(BCC) 2]
-    [(BCS) 2]
-    [(BEQ) 2]
-    [(BMI) 2]
-    [(BNE) 2]
-    [(BPL) 2]
-    [(BVC) 2]
-    [(BVS) 2]
-    [else (hash-ref (lookup name mode) 'length)]))
+(define (instruction-length name mode)
+  (case mode
+    [(IMM) 2]
+    [(ZP) 2]
+    [(ZPX) 2]
+    [(ZPY) 2]
+    [(ABS) 3]
+    [(ABSX) 3]
+    [(ABSY) 3]
+    [(INDX) 2]
+    [(INDY) 2]
+    [else
+      (case name
+        [(JMP) 3]
+        [(BEQ) 2]
+        [(BCC) 2]
+        [(BCS) 2]
+        [(BEQ) 2]
+        [(BMI) 2]
+        [(BNE) 2]
+        [(BPL) 2]
+        [(BVC) 2]
+        [(BVS) 2])]))
