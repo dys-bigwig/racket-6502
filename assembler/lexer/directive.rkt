@@ -6,6 +6,6 @@
 
 (define-lex-abbrev equate/l (:: (:char-ci #\E) (:char-ci #\Q) (:char-ci #\U)))
 
-(define-lex-abbrev db/l (:: (:char-ci #\D) (:char-ci #\B)))
+(define-lex-abbrev db/l (:: #\. (:char-ci #\D) (:char-ci #\B)))
 
 (define-lex-abbrev directive/l (:or equate/l db/l))
