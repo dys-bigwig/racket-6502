@@ -1,259 +1,212 @@
 #lang racket
-(require megaparsack megaparsack/text)
+(require "instruction.rkt")
+(require "lexer/lex.rkt")
+(require lens)
+(require fancy-app)
+(require parser-tools/lex)
+(require megaparsack megaparsack/parser-tools/lex)
 (require data/monad)
 (require data/functor)
 (require data/applicative)
 (require fancy-app)
 (require data/either)
+(provide parse-file)
 
-(define hex-digit/p
-  (or/p (char-between/p #\a
-                        #\f)
-        (char-between/p #\A
-                        #\F)
-        digit/p))
+(define symbol-table (make-parameter (hash)))
 
-(define hex-digit+/p (many+/p hex-digit/p))
+(define number+/p
+  (many+/p (token/p 'number)))
 
-(define hex-lit/p
-  (do
-    (char/p #\$)
-    [num <- hex-digit+/p]
-    (pure (string->number (list->string num) 16))))
-
-(define dec-lit/p
-  (do
-    [num <- (many+/p digit/p)]
-    (pure (string->number (list->string num)))))
-
-(define num-lit/p
-  (do
-    (or/p (try/p hex-lit/p)
-          dec-lit/p)))
-
-(struct LABEL-REF (name) #:transparent)
-
-(define label-ref/p
-  (do
-    [label <- (many+/p letter/p)]
-    (pure (LABEL-REF (list->string label)))))
+(define newline/p
+  (token/p 'newline))
 
 (define x/p
-  (do (char/p #\,)
-    (char-ci/p #\x)))
+  (token/p 'x))
 
 (define y/p
-  (do (char/p #\,)
-    (char-ci/p #\y)))
+  (token/p 'y))
 
-(struct ACC ())
+(define number/p
+  (token/p 'number))
 
-(define mode-acc/p
-  (do
-    (char-ci/p #\a)
-    (pure (ACC))))
+(define comma/p
+  (token/p 'comma))
 
-(struct IMM (val) #:transparent)
+(define lparen/p
+  (token/p 'lparen))
 
-(define mode-imm/p
-  (do
-    (char/p #\#)
-    (rand <- (guard/p num-lit/p
-                      (<= _ #xFFFF)))
-    (pure (IMM rand))))
+(define rparen/p
+  (token/p 'rparen))
 
-(struct ZP (val) #:transparent)
+(define mnemonic/p
+  (token/p 'mnemonic))
 
-(define mode-zp/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (<= _ #xFF))]
-    (pure (ZP rand))))
+(define identifier/p
+  (token/p 'identifier))
 
-(struct ZP-X (val) #:transparent)
+(define equals/p
+  (token/p 'equals))
 
-(define mode-zp-x/p
-  (do
-    [rand <- mode-zp/p]
-    x/p
-    (pure (ZP-X (ZP-val rand)))))
-
-(struct ZP-Y (val) #:transparent)
-
-(define mode-zp-y/p
-  (do
-    [rand <- mode-zp/p]
-    y/p
-    (pure (ZP-Y (ZP-val rand)))))
-
-(struct REL (offset) #:transparent)
-
-(define mode-rel/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (<= _ #xFF))]
-    (pure (REL rand))))
-
-(struct ABS (val) #:transparent)
-
-(define mode-abs/p
-  (do
-    [rand <- (guard/p num-lit/p
-                      (conjoin (> _ #xFF)
-                               (<= _ #xFFFF)))]
-    (pure (ABS rand))))
-
-(struct ABS-X (val) #:transparent)
-
-(define mode-abs-x/p
-  (do
-    [rand <- mode-abs/p]
-    x/p
-    (pure (ABS-X (ABS-val rand)))))
-
-(struct ABS-Y (val) #:transparent)
-
-(define mode-abs-y/p
-  (do
-    [rand <- mode-abs/p]
-    y/p
-    (pure (ABS-Y (ABS-val rand)))))
-
-(struct IND (addr) #:transparent)
-
-(define mode-ind/p
+(define label/p
   (do 
-    (char/p #\()
-    [rand <- (guard/p num-lit/p
-                      (conjoin (> _ #xFF)
-                               (<= _ #xFFFF)))]
-    (char/p #\))
-    (pure (IND rand))))
+    [name <- (token/p 'label)]
+    (or/p (try/p newline/p)
+          (try/p void/p))
+    (pure (Label name))))
 
-(struct IND-X (val) #:transparent)
-
-(define mode-ind-x/p
+(define immediate/p
   (do
-    (char/p #\()
-    (rand <- mode-zp-x/p)
-    (char/p #\))
-    (pure (IND-X (ZP-X-val rand)))))
+    [token/p 'hashtag]
+    [n <- (token/p 'number)]
+    (pure (Operand n 'imm #f))))
 
-(struct IND-Y (val) #:transparent)
-
-(define mode-ind-y/p
+(define zp/p
   (do
-    (char/p #\()
-    (rand <- mode-zp-y/p)
-    (char/p #\))
-    (pure (IND-Y (ZP-Y-val rand)))))
+    [n <- (guard/p number/p
+                   (<= _ #xFF))]
+    (pure (Operand n 'ZP #f))))
 
-(struct IMPL () #:transparent)
-
-(define mode-impl/p
+(define zp-x/p
   (do
-    void/p
-    (pure (IMPL))))
+    [n <- (guard/p number/p (<= _ #xFF))]
+    comma/p
+    x/p
+    (pure (Operand n 'ZP 'X))))
 
-(struct EQU (name val) #:transparent)
-
-(define equ/p
+(define zp-y/p
   (do
-    [label <- (many+/p (char-not-in/p " "))]
-    (many+/p (char/p #\space))
-    (string-ci/p "EQU")
-    (many+/p (char/p #\space))
-    [val <- (many+/p (char-not-in/p "\n"))]
-    (pure (EQU (list->string label) (list->string val)))))
+    [n <- (guard/p number/p (<= _ #xFF))]
+    comma/p
+    y/p
+    (pure (Operand n 'ZP 'Y))))
 
-(struct BYTE (val) #:transparent)
-
-(define byte/p
+(define abs/p
   (do
-    (string-ci/p "BYTE")
-    (many+/p (char/p #\space))
-    [val <- num-lit/p]
-    (pure (BYTE val))))
+    [n <- (guard/p number/p
+                   (> _ #xFF))]
+    (pure (Operand n 'ABS #f))))
 
-(struct OP-EXPR (opcode operand) #:transparent)
-(struct ADC ()) (struct AND ()) (struct ASL ()) (struct BCC ())
-(struct BCS ()) (struct BEQ ()) (struct BIT ()) (struct BMI ())
-(struct BNE ()) (struct BPL ()) (struct BRK ()) (struct BVC ())
-(struct BVS ()) (struct CLC ()) (struct CLD ()) (struct CLI ())
-(struct CLV ()) (struct CMP ()) (struct CPX ()) (struct CPY ())
-(struct DEC ()) (struct DEX ()) (struct DEY ()) (struct EOR ())
-(struct INC ()) (struct INX ()) (struct INY ()) (struct JMP ())
-(struct JSR ()) (struct LDA ()) (struct LDX ()) (struct LDY ())
-(struct LSR ()) (struct NOP ()) (struct ORA ()) (struct PHA ())
-(struct PHP ()) (struct PLA ()) (struct PLP ()) (struct ROL ())
-(struct ROR ()) (struct RTI ()) (struct RTS ()) (struct SBC ())
-(struct SEC ()) (struct SED ()) (struct SEI ()) (struct STA ())
-(struct STX ()) (struct STY ()) (struct TAX ()) (struct TAY ())
-(struct TXA ()) (struct TSX ()) (struct TXS ()) (struct TYA ())
-
-(define (op-string->OP op-str)
-  (define OP-hash
-    (hash "ADC" (ADC) "AND" (AND) "ASL" (ASL) "BCC" (BCC)
-          "BCS" (BCS) "BEQ" (BEQ) "BIT" (BIT) "BMI" (BMI)
-          "BNE" (BNE) "BPL" (BPL) "BRK" (BRK) "BVC" (BVC)
-          "BVS" (BVS) "CLC" (CLC) "CLD" (CLD) "CLI" (CLI)
-          "CLV" (CLV) "CMP" (CMP) "CPX" (CPX) "CPY" (CPY)
-          "DEC" (DEC) "DEX" (DEX) "DEY" (DEY) "EOR" (EOR)
-          "INC" (INC) "INX" (INX) "INY" (INY) "JMP" (JMP)
-          "JSR" (JSR) "LDA" (LDA) "LDX" (LDX) "LDY" (LDY)
-          "LSR" (LSR) "NOP" (NOP) "ORA" (ORA) "PHA" (PHA)
-          "PHP" (PHA) "PLA" (PLA) "PLP" (PLP) "ROL" (ROL)
-          "ROR" (ROR) "RTI" (RTI) "RTS" (RTS) "SBC" (SBC)
-          "SEC" (SEC) "SED" (SED) "SEI" (SEI) "STA" (STA)
-          "STX" (STX) "STY" (STY) "TAX" (TAX) "TAY" (TAY)
-          "TXA" (TXA) "TSX" (TSX) "TXS" (TXS) "TYA" (TYA)))
-  (hash-ref OP-hash op-str)) 
-
-(define opcode/p
+(define abs-x/p
   (do
-    [op <- (or/p (try/p (string-ci/p "ADC")) (try/p (string-ci/p "AND")) (try/p (string-ci/p "ASL")) (try/p (string-ci/p "BCC"))
-                 (try/p (string-ci/p "BCS")) (try/p (string-ci/p "BEQ")) (try/p (string-ci/p "BIT")) (try/p (string-ci/p "BMI"))
-                 (try/p (string-ci/p "BNE")) (try/p (string-ci/p "BPL")) (try/p (string-ci/p "BRK")) (try/p (string-ci/p "BVC"))
-                 (try/p (string-ci/p "BVS")) (try/p (string-ci/p "CLC")) (try/p (string-ci/p "CLD")) (try/p (string-ci/p "CLI"))
-                 (try/p (string-ci/p "CLV")) (try/p (string-ci/p "CMP")) (try/p (string-ci/p "CPX")) (try/p (string-ci/p "CPY"))
-                 (try/p (string-ci/p "DEC")) (try/p (string-ci/p "DEX")) (try/p (string-ci/p "DEY")) (try/p (string-ci/p "EOR"))
-                 (try/p (string-ci/p "INC")) (try/p (string-ci/p "INX")) (try/p (string-ci/p "INY")) (try/p (string-ci/p "JMP")) 
-                 (try/p (string-ci/p "JSR")) (try/p (string-ci/p "LDA")) (try/p (string-ci/p "LDX")) (try/p (string-ci/p "LDY"))
-                 (try/p (string-ci/p "LSR")) (try/p (string-ci/p "NOP")) (try/p (string-ci/p "ORA")) (try/p (string-ci/p "PHA"))
-                 (try/p (string-ci/p "PHP")) (try/p (string-ci/p "PLA")) (try/p (string-ci/p "PLP")) (try/p (string-ci/p "ROL"))
-                 (try/p (string-ci/p "ROR")) (try/p (string-ci/p "RTI")) (try/p (string-ci/p "RTS")) (try/p (string-ci/p "SBC"))
-                 (try/p (string-ci/p "SEC")) (try/p (string-ci/p "SED")) (try/p (string-ci/p "SEI")) (try/p (string-ci/p "STA"))
-                 (try/p (string-ci/p "STX")) (try/p (string-ci/p "STY")) (try/p (string-ci/p "TAX")) (try/p (string-ci/p "TAY"))
-                 (try/p (string-ci/p "TXA")) (try/p (string-ci/p "TSX")) (try/p (string-ci/p "TXS")) (try/p (string-ci/p "TYA")))]
-    (pure (op-string->OP op))))
+    [n <- (guard/p number/p (> _ #xFF))]
+    comma/p
+    x/p
+    (pure (Operand n 'ABS 'X))))
+
+(define abs-y/p
+  (do
+    [n <- (guard/p number/p (> _ #xFF))]
+    comma/p
+    y/p
+    (pure (Operand n 'ABS 'Y))))
+
+(define ind/p
+  (do
+    lparen/p
+    [val <- (or/p (try/p (guard/p number/p (> _ #xFF)))
+                  (try/p identifier/p))]
+    rparen/p
+    (pure (Operand val 'IND #f))))
+
+(define ind-x/p
+  (do
+    lparen/p
+    [val <- (or/p (try/p (guard/p number/p (> _ #xFF)))
+                  (try/p identifier/p))]   
+    comma/p
+    x/p
+    rparen/p
+    (pure (Operand val 'IND 'X))))
+
+(define ind-y/p
+  (do
+    lparen/p
+    [val <- (or/p (try/p (guard/p number/p (> _ #xFF)))
+                  (try/p identifier/p))]
+    rparen/p
+    comma/p
+    y/p
+    (pure (Operand val 'IND 'Y))))
 
 (define operand/p
-  (or/p (try/p mode-acc/p)
-        (try/p mode-imm/p)
-        (try/p mode-zp/p)
-        (try/p mode-zp-x/p)
-        (try/p mode-zp-y/p)
-        (try/p mode-rel/p)
-        (try/p mode-abs/p)
-        (try/p mode-abs-x/p)
-        (try/p mode-abs-y/p)
-        (try/p mode-ind/p)
-        (try/p mode-ind-x/p)
-        (try/p mode-ind-y/p)
-        (try/p mode-impl/p)))
-
-(define opcode&operand/p
   (do
-    [op <- opcode/p]
-    (char/p #\space)
-    [rand <- operand/p]
-    (pure (OP-EXPR op rand))))
+    [operand <- (or/p (try/p immediate/p)
+                      (try/p zp-x/p)
+                      (try/p zp-y/p)
+                      (try/p abs-x/p)
+                      (try/p abs-y/p)
+                      (try/p zp/p)
+                      (try/p abs/p)
+                      (try/p ind-x/p)
+                      (try/p ind-y/p)
+                      (try/p ind/p)
+                      (try/p (do [name <- identifier/p]
+                                 (pure (Operand name '? #f))))
+                      (do void/p        ;alternatively, 'newline
+                        (pure (Operand #f 'IMP #f))))]
+    (pure operand)))
 
-(define expr/p
-  (or/p (try/p equ/p)
-        (try/p opcode&operand/p)) )
+(define instruction-statement/p
+  (do
+    [mnemonic <- mnemonic/p]
+    [operand <- operand/p]
+    newline/p
+    (pure (Instruction (string->symbol mnemonic) (if (and (equal? mnemonic "JMP")
+                                                          (equal? (Operand-mode operand) '?))
+                                                   (lens-set Operand-mode-lens operand 'ABS)
+                                                   operand)))))
 
-(define expr*/p
-  (many/p expr/p #:sep (many/p (char/p #\newline))))
+(define db/p
+  (do
+    [token/p 'db]
+    [ns <- number+/p]
+    newline/p
+    (pure (Db ns))))
 
-(parse-string expr*/p "PI EQU 3.14\nLDA #$41")
+(define assignment/p
+  (do
+    [name <- identifier/p]
+    equals/p
+    [value <- number/p]
+    newline/p
+    (pure (Assignment name value))))
+
+(define statement/p
+  (do
+    (or/p (try/p instruction-statement/p)
+          (try/p db/p)
+          (try/p label/p)
+          (try/p assignment/p))))
+
+(define program/p
+  (many+/p statement/p))
+
+(define (get-token-name token)
+  (cond
+    [(symbol? token) token]
+    [(position-token? token) (get-token-name (position-token-token token))]
+    [(token? token) (token-name token)]
+    [else token]))
+
+(define (flatten-token token)
+  (cond
+    [(position-token? token)
+     (cond
+       [(position-token? (position-token-token token)) (flatten-token (position-token-token token))]
+       [else token])]))
+
+(define (parse-file path)
+  (call-with-input-file path
+    (λ (in) (parse-result!
+               (parse-tokens program/p
+                             (for/list ([token (in-producer (thunk (lex-src in)))]
+                                        #:final (symbol=? (get-token-name token) 'eof))
+                               (flatten-token token)))))))
+
+(define (parse-string str)
+  (call-with-input-string str
+    (λ (in) (parse-result!
+               (parse-tokens program/p
+                             (for/list ([token (in-producer (thunk (lex-src in)))]
+                                        #:final (symbol=? (get-token-name token) 'eof))
+                               (flatten-token token)))))))
