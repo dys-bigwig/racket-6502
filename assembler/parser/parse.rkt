@@ -1,6 +1,8 @@
 #lang racket
+(require racket/generator)
 (require "../lexer/lex.rkt"
          parser-tools/yacc
+         parser-tools/lex
          racket/require
          (only-in racket/bool symbol=?))
 (provide lex+parse
@@ -24,27 +26,22 @@
 (define parse
   (parser
     [tokens mnemonics atoms delimiters letters directives]
-    [start Line*]
-    [end eof]
+    [start Line]
+    [end newline]
     [error (λ (tok-ok? name val)
               (error (format "~a ~a" name val)))]
     [debug "debug.txt"]
     ;[yacc-output "out.y"]
     [grammar
-      (Line*
-        [(Line Line*) (cons $1 $2)]
-        [() '()])
       (Line
-        [(mnemonic Operand? newline) (Instruction (string->symbol $1) $2)]
-        [(identifier equals int newline) (Equals $1 $3)]
-        [(label Newline?) (Label $1)]
-        [(db Int/Identifier* newline) (Db $2)])
+        [(mnemonic Operand?) (Instruction (string->symbol $1) $2)]
+        [(identifier equals Int/Identifier) (Equals $1 $3)]
+        [(label) (Label $1)]
+        [(db Int/Identifier*) (Db $2)]
+        [() (void)])
       (Int/Identifier*
         [(Int/Identifier Int/Identifier*) (cons $1 $2)]
         [() '()])
-      (Newline?
-        [(newline) (void)]
-        [() (void)])
       (Int/Identifier
         [(int) $1]
         [(identifier) $1])
@@ -69,7 +66,5 @@
   (define in (open-input-string str))
   (parse (λ () (lex in))))
 
-(define (lex+parse path)
-  (call-with-input-file path
-    (λ (in) 
-       (parse (λ () (lex in))))))
+(define (lex+parse in)
+  (parse (thunk (lex in))))
