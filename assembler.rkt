@@ -6,56 +6,52 @@
 (require data/pvector
          data/collection)
 
+(define (extract-label str)
+  (substring str 0 (sub1 (string-length str))))
+
 (define src (parse-file "source.asm"))
 
-(define (resolve-labels parse-tree)
-  (for/fold
-    ([pc 0] [labels (hash)]
-     #:result pc)
-    ([node parse-tree])
-    (match node
-      [(struct* Instruction ([name name]
-                             [operand operand]))
-       (values (instruction-length name
-                                   (cons (Operand-mode operand)
-                                         (Operand-index operand)))
-               labels)]
-
-      [(struct* Label ([name name]))
-       (values pc
-               (hash-set labels
-                         name pc))]
-
-      [_ (values pc labels)])))
-
-(define (in-pcs parse-tree)
-  (reverse (for/fold ([pc '(0)])
+(define (first-pass parse-tree)
+  (for/fold ([pc 0]
+             [labels (hash)]
+             #:result (values pc labels))
             ([node parse-tree])
     (match node
       [(struct* Instruction ([name name]
                              [operand operand]))
-       (cons (+ (instruction-length name (cons (Operand-mode operand)
-                                            (Operand-index operand)))
-                (car pc))
-             pc)]
-      [_ (cons (car pc) pc)]))))
+       (values (+ pc (instruction-length name (Operand-mode operand)))
+               labels)]
 
-(define (assemble parse-tree labels)
-  (reverse
-    (for/fold ([output '()])
-              ([node parse-tree]
-               [pc (in-pcs parse-tree)])
-      (match node
-        [(struct* Instruction ([name name]
-                               [operand operand]))
-         (cons (cons pc
-                     (lookup name
-                             (cons (Operand-mode operand)
-                                   (Operand-index operand))))
-               output)]
-        [_ output]))))
+      [(struct* Label ([name name]))
+       (values pc
+               (hash-set labels (extract-label name) pc))]
+      [(struct* Db ([bytes bs]))
+       (values (+ pc (length bs))
+               labels)])))
 
-(assemble src (resolve-labels src))
+(define op-hash
+  (hash 'LDA (hash '(IMM . #f) (λ (operand-value pc output)
+                                  (values (+ pc 2)
+                                          (set-nth* output
+                                                    pc #xA9
+                                                    (+ pc 1) operand-value))))))
+
+(define (emit-op name operand pc output)
+  ((hash-ref (hash-ref op-hash
+                      name)
+            (Operand-mode operand)) (Operand-value operand) pc output))
+
+(define (test parse-tree size)
+  (for/fold ([pc 0]
+             [output (pvector size 0)]
+             #:result output)
+            ([node parse-tree])
+    (match node
+      [(struct* Instruction ([name name]
+                             [operand operand]))
+       (emit-op name operand pc output)])))
+
+(test src 2)
 
 ;(define (emit-instruction instruction)
 ;  (define operand (get-operand instruction))
@@ -70,4 +66,3 @@
 ;          [(? Instruction?) 
 ;           (write-byte (char->integer #\A))])))))
 ;
-;(struct Context (src labels))

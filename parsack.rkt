@@ -12,8 +12,6 @@
 (require data/either)
 (provide parse-file)
 
-(define symbol-table (make-parameter (hash)))
-
 (define number+/p
   (many+/p (token/p 'number)))
 
@@ -58,47 +56,47 @@
   (do
     [token/p 'hashtag]
     [n <- (token/p 'number)]
-    (pure (Operand n 'imm #f))))
+    (pure (Operand n '(IMM . #f)))))
 
 (define zp/p
   (do
     [n <- (guard/p number/p
                    (<= _ #xFF))]
-    (pure (Operand n 'ZP #f))))
+    (pure (Operand n '(ZP . #f)))))
 
 (define zp-x/p
   (do
     [n <- (guard/p number/p (<= _ #xFF))]
     comma/p
     x/p
-    (pure (Operand n 'ZP 'X))))
+    (pure (Operand n '(ZP . X)))))
 
 (define zp-y/p
   (do
     [n <- (guard/p number/p (<= _ #xFF))]
     comma/p
     y/p
-    (pure (Operand n 'ZP 'Y))))
+    (pure (Operand n '(ZP . Y)))))
 
 (define abs/p
   (do
     [n <- (guard/p number/p
                    (> _ #xFF))]
-    (pure (Operand n 'ABS #f))))
+    (pure (Operand n '(ABS . #f)))))
 
 (define abs-x/p
   (do
     [n <- (guard/p number/p (> _ #xFF))]
     comma/p
     x/p
-    (pure (Operand n 'ABS 'X))))
+    (pure (Operand n '(ABS . X)))))
 
 (define abs-y/p
   (do
     [n <- (guard/p number/p (> _ #xFF))]
     comma/p
     y/p
-    (pure (Operand n 'ABS 'Y))))
+    (pure (Operand n '(ABS . Y)))))
 
 (define ind/p
   (do
@@ -106,7 +104,7 @@
     [val <- (or/p (try/p (guard/p number/p (> _ #xFF)))
                   (try/p identifier/p))]
     rparen/p
-    (pure (Operand val 'IND #f))))
+    (pure (Operand val '(IND . #f)))))
 
 (define ind-x/p
   (do
@@ -116,7 +114,7 @@
     comma/p
     x/p
     rparen/p
-    (pure (Operand val 'IND 'X))))
+    (pure (Operand val '(IND . X)))))
 
 (define ind-y/p
   (do
@@ -126,7 +124,7 @@
     rparen/p
     comma/p
     y/p
-    (pure (Operand val 'IND 'Y))))
+    (pure (Operand val '(IND . Y)))))
 
 (define operand/p
   (do
@@ -141,9 +139,9 @@
                       (try/p ind-y/p)
                       (try/p ind/p)
                       (try/p (do [name <- identifier/p]
-                                 (pure (Operand name '? #f))))
+                                 (pure (Operand name '(? . #f)))))
                       (do void/p        ;alternatively, 'newline
-                        (pure (Operand #f 'IMP #f))))]
+                        (pure (Operand #f '(IMP . #f)))))]
     (pure operand)))
 
 (define instruction-statement/p
@@ -152,8 +150,8 @@
     [operand <- operand/p]
     newline/p
     (pure (Instruction (string->symbol mnemonic) (if (and (equal? mnemonic "JMP")
-                                                          (equal? (Operand-mode operand) '?))
-                                                   (lens-set Operand-mode-lens operand 'ABS)
+                                                          (equal? (Operand-mode operand) '(? . #f)))
+                                                   (lens-set Operand-mode-lens operand '(ABS . #f))
                                                    operand)))))
 
 (define db/p
