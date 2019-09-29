@@ -2,7 +2,8 @@
 (require "ops.rkt"
          "utility.rkt"
          "parsack.rkt"
-         "instruction.rkt")
+         "instruction.rkt"
+         "context.rkt")
 (require data/pvector
          data/collection)
 
@@ -14,7 +15,7 @@
 (define (first-pass parse-tree)
   (for/fold ([pc 0]
              [labels (hash)]
-             #:result (values pc labels))
+             #:result (Context 0 parse-tree labels (make-pvector pc 0)))
             ([node parse-tree])
     (match node
       [(struct* Instruction ([name name]
@@ -29,40 +30,17 @@
        (values (+ pc (length bs))
                labels)])))
 
-(define op-hash
-  (hash 'LDA (hash '(IMM . #f) (λ (operand-value pc output)
-                                  (values (+ pc 2)
-                                          (set-nth* output
-                                                    pc #xA9
-                                                    (+ pc 1) operand-value))))))
+(define (emit-op name operand context)
+  (define emit (get-in instructions
+                       name
+                       (Operand-mode operand)))
+  (emit context))
 
-(define (emit-op name operand pc output)
-  ((hash-ref (hash-ref op-hash
-                      name)
-            (Operand-mode operand)) (Operand-value operand) pc output))
+(define (second-pass context)
+  (let assemble ([context context])
+    (match (Context-parse-tree context)
+      ['() (Context-output context)]
+      [(list (Instruction name operand) nodes ...)
+       (assemble (emit-op name operand context))])))
 
-(define (test parse-tree size)
-  (for/fold ([pc 0]
-             [output (pvector size 0)]
-             #:result output)
-            ([node parse-tree])
-    (match node
-      [(struct* Instruction ([name name]
-                             [operand operand]))
-       (emit-op name operand pc output)])))
-
-(test src 2)
-
-;(define (emit-instruction instruction)
-;  (define operand (get-operand instruction))
-;  (define-values (val mode) (values (get-operand-val operand)
-;                                    (get-operand-mode operand))) (write-byte))
-;
-;(define (test parse-tree)
-;  (for ([node parse-tree])
-;    (with-output-to-file "test.bin" #:exists 'replace
-;     (λ ()
-;        (match node
-;          [(? Instruction?) 
-;           (write-byte (char->integer #\A))])))))
-;
+(second-pass (first-pass src))
