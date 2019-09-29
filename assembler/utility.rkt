@@ -1,5 +1,14 @@
-#lang racket/base
+#lang racket
 (provide (all-defined-out))
+
+(define (get-in h . ks)
+  (let loop ([h h] [ks ks])
+    (cond
+      [(null? ks) h]
+      [else
+        (define k (car ks))
+        (define h^ (hash-ref h k))
+        (loop h^ (rest ks))])))
 
 (define (addr-lobyte addr)
   (bitwise-and addr #xFF))

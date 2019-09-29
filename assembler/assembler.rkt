@@ -1,40 +1,46 @@
 #lang racket
-(require "parser/parse.rkt"
-         "ops.rkt"
-         "utility.rkt")
+(require "ops.rkt"
+         "utility.rkt"
+         "parsack.rkt"
+         "instruction.rkt"
+         "context.rkt")
+(require data/pvector
+         data/collection)
 
-(define src (lex+parse "source.asm"))
+(define (extract-label str)
+  (substring str 0 (sub1 (string-length str))))
 
-(define (resolve-labels parse-tree)
-  (for/fold
-    ([pc 0] [labels (hash)])
-    ([node parse-tree])
+(define src (parse-file "source.asm"))
+
+(define (first-pass parse-tree)
+  (for/fold ([pc 0]
+             [labels (hash)]
+             #:result (Context 0 parse-tree labels (make-pvector pc 0)))
+            ([node parse-tree])
     (match node
-      [(? Instruction? instruction) (define name (get-instruction-name instruction))
-                                    (define operand (get-operand instruction))
-                                    (define value (get-operand-value operand))
-                                    (define mode (get-operand-mode operand))
-                                    (define len (instruction-length name mode))
-                                    (values (+ pc len)
-                                            labels)]
-      [(? Label? label) (values pc
-                                (hash-set labels
-                                          (get-label-name label) pc))]
-      [_ (values pc labels)])))
+      [(struct* Instruction ([name name]
+                             [operand operand]))
+       (values (+ pc (instruction-length name (Operand-mode operand)))
+               labels)]
 
-;(define (emit-instruction instruction)
-;  (define operand (get-operand instruction))
-;  (define-values (val mode) (values (get-operand-val operand)
-;                                    (get-operand-mode operand))) (write-byte))
-;
-;(define (test parse-tree)
-;  (for ([node parse-tree])
-;    (with-output-to-file "test.bin" #:exists 'replace
-;     (λ ()
-;        (match node
-;          [(? Instruction?) 
-;           (write-byte (char->integer #\A))])))))
-;
-(struct Context (src labels))
+      [(struct* Label ([name name]))
+       (values pc
+               (hash-set labels (extract-label name) pc))]
+      [(struct* Db ([bytes bs]))
+       (values (+ pc (length bs))
+               labels)])))
 
-(resolve-labels src)
+(define (emit-op name operand context)
+  (define emit (get-in instructions
+                       name
+                       (Operand-mode operand)))
+  (emit context))
+
+(define (second-pass context)
+  (let assemble ([context context])
+    (match (Context-parse-tree context)
+      ['() (Context-output context)]
+      [(list (Instruction name operand) nodes ...)
+       (assemble (emit-op name operand context))])))
+
+(second-pass (first-pass src))
