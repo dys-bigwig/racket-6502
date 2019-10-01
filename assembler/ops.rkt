@@ -66,9 +66,9 @@
     (hash-update result
                  (string->symbol name)
                  (hash-set _ (mode-string->symbol mode) (case (string->number len)
-                                                          [(1) (one-byte-proc hex)]
-                                                          [(2) (two-byte-proc hex)]
-                                                          [(3) (three-byte-proc hex)]))
+                                                          [(1) (one-byte-proc (string->number (string-cdr hex) 16))]
+                                                          [(2) (two-byte-proc (string->number (string-cdr hex) 16))]
+                                                          [(3) (three-byte-proc (string->number (string-cdr hex) 16))]))
                  hash)))
 
 (define (instruction-length name mode)

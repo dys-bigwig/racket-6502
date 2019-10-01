@@ -18,15 +18,13 @@
              #:result (Context 0 parse-tree labels (make-pvector pc 0)))
             ([node parse-tree])
     (match node
-      [(struct* Instruction ([name name]
-                             [operand operand]))
+      [(Instruction name operand)
        (values (+ pc (instruction-length name (Operand-mode operand)))
                labels)]
-
-      [(struct* Label ([name name]))
+      [(Label name)
        (values pc
                (hash-set labels (extract-label name) pc))]
-      [(struct* Db ([bytes bs]))
+      [(Db bs)
        (values (+ pc (length bs))
                labels)])))
 
