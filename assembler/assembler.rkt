@@ -34,11 +34,23 @@
                        (Operand-mode operand)))
   (emit context))
 
+(define (emit-db bs context)
+  (match-let* ([(Context pc parse-tree labels output) context] )
+    (Context (+ pc (length bs))
+             (rest parse-tree)
+             labels
+             (for/fold ([output output])
+                       ([b bs] [i (length bs)])
+               (set-nth output (+ pc i) b)))))
+
+
 (define (second-pass context)
   (let assemble ([context context])
     (match (Context-parse-tree context)
       ['() (Context-output context)]
       [(list (Instruction name operand) nodes ...)
-       (assemble (emit-op name operand context))])))
+       (assemble (emit-op name operand context))]
+      [(list (Db bs) nodes ...)
+       (assemble (emit-db bs context))])))
 
 (second-pass (first-pass src))

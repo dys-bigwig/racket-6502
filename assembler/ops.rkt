@@ -74,23 +74,12 @@
 (define (instruction-length name mode)
   (case name
     [(JMP) 3]
-    [(BEQ) 2]
-    [(BCC) 2]
-    [(BCS) 2]
-    [(BEQ) 2]
-    [(BMI) 2]
-    [(BNE) 2]
-    [(BPL) 2]
-    [(BVC) 2]
-    [(BVS) 2]
     [else
-    (case (car mode)
-      [(IMM) 2]
-      [(ZP) 2]
-      [(ZPX) 2]
-      [(ZPY) 2]
-      [(ABS) 3]
-      [(ABSX) 3]
-      [(ABSY) 3]
-      [(INDX) 2]
-      [(INDY) 2])]))
+      (case (car mode)
+        [(IMM) 2]
+        [(ZP) 2]
+        [(ZP) 2]
+        [(ABS) 3]
+        [(IND) 2]
+        [(IMP) 1]
+        [(REL) 2])]))
