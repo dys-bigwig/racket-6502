@@ -19,7 +19,7 @@
 (define flag-set? (compose not false?))
 
 (define (bytes->addr b1 b2)
-  (bitwise-ior (arithmetic-shift b1 8) b2))
+  (bitwise-ior (arithmetic-shift b2 8) b1))
 
 (define (byte->twos-complement b)
   (if (< b 127)
